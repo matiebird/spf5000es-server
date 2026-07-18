@@ -1,0 +1,26 @@
+[MODBUS]
+PORT = /dev/ttyUSB0
+TIMEOUT_SEC = 1.5
+
+[LOGGING]
+; INFO logs startup/shutdown, register write values, and rejections.
+; DEBUG also logs status polling and register windows.
+LEVEL = INFO
+
+[MQTT]
+HOST = localhost
+PORT = 1883
+USER =
+PASSWORD =
+CLIENT_ID = growatt_spf5000es
+KEEPALIVE_SEC = 60
+WILL_DELAY_SEC = 10
+DISCONNECT_TIMEOUT_SEC = 5
+TOPIC_PREFIX = growatt/spf5000es
+HA_DISCOVERY_PREFIX = homeassistant
+HA_DEVICE_ID = growatt_spf5000es
+HA_DEVICE_NAME = Growatt SPF 5000 ES
+
+[POLLING]
+CONFIG_INTERVAL_SEC = 600
+STATUS_INTERVAL_SEC = 2

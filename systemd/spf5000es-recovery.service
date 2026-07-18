@@ -1,0 +1,25 @@
+[Unit]
+Description=Recover Growatt inverter after SPF 5000 ES service failure
+StartLimitIntervalSec=0
+
+[Service]
+Type=oneshot
+User=root
+ExecStart=/usr/bin/usbreset 04e2:1410
+ExecStartPost=/usr/bin/systemctl --no-block restart spf5000es-server.service
+Restart=on-failure
+RestartSec=5s
+UMask=0077
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+ProtectClock=true
+RestrictSUIDSGID=true
+LockPersonality=true
+RestrictRealtime=true
+StandardOutput=journal
+StandardError=journal
