@@ -32,28 +32,32 @@ type mqttClient interface {
 }
 
 type MQTTService struct {
-	mu              sync.Mutex
-	commands        inverterCommandService
-	config          MQTTConfig
-	client          mqttClient
-	clientConfig    autopaho.ClientConfig
-	connected       bool
-	batteryType     string
-	pendingStatus   map[string]any
-	pendingConfig   map[string]any
-	statusDirty     bool
-	configDirty     bool
-	updatesPending  bool
-	slugToConfigKey map[string]string
-	base            string
-	availability    string
-	timeSyncCommand string
-	configPrefix    string
-	configFilter    string
-	statusTopics    map[string]string
-	configTopics    map[string]string
-	updateWake      chan struct{}
-	connectionID    uint64
+	mu                     sync.Mutex
+	commands               inverterCommandService
+	config                 MQTTConfig
+	client                 mqttClient
+	clientConfig           autopaho.ClientConfig
+	connected              bool
+	initialConfigPublished bool
+	initialStatusPublished bool
+	discoveryPending       bool
+	onlinePublished        bool
+	batteryType            string
+	pendingStatus          map[string]any
+	pendingConfig          map[string]any
+	statusDirty            bool
+	configDirty            bool
+	updatesPending         bool
+	slugToConfigKey        map[string]string
+	base                   string
+	availability           string
+	timeSyncCommand        string
+	configPrefix           string
+	configFilter           string
+	statusTopics           map[string]string
+	configTopics           map[string]string
+	updateWake             chan struct{}
+	connectionID           uint64
 }
 
 func NewMQTTService(commands inverterCommandService, config MQTTConfig) *MQTTService {
@@ -189,17 +193,21 @@ func (s *MQTTService) onConnect(client mqttClient, connectionID uint64) {
 		return
 	}
 	s.connected = true
+	s.initialConfigPublished = false
+	s.initialStatusPublished = false
+	s.onlinePublished = false
 	s.commands.SetPollingEnabled(true)
 	s.mu.Unlock()
-	s.publishDeviceDiscovery()
 	s.requestUpdatePublish()
-	s.publish(s.availabilityTopic(), mqttOnlinePayload, true)
 }
 
 func (s *MQTTService) onConnectionLost() {
 	s.mu.Lock()
 	s.connectionID++
 	s.connected = false
+	s.initialConfigPublished = false
+	s.initialStatusPublished = false
+	s.onlinePublished = false
 	s.commands.SetPollingEnabled(false)
 	s.mu.Unlock()
 	slog.Warn("MQTT disconnected")
@@ -278,15 +286,15 @@ func (s *MQTTService) ConfigUpdated(config map[string]any) {
 }
 
 func (s *MQTTService) publishConfig(config map[string]any) {
-	if battery, ok := config["BatteryType"].(string); ok {
-		s.refreshBatteryDiscovery(battery)
-	}
 	for key, value := range config {
 		topic := s.configTopics[key]
 		if topic == "" {
 			topic = valueTopic(s.base, "config", key)
 		}
 		s.publish(topic, mqttValue(value), true)
+	}
+	if battery, ok := config["BatteryType"].(string); ok {
+		s.updateBatteryType(battery)
 	}
 }
 
@@ -312,6 +320,7 @@ func (s *MQTTService) publishUpdates() {
 	}
 	statusDirty, configDirty := s.statusDirty, s.configDirty
 	status, config := s.pendingStatus, s.pendingConfig
+	connectionID := s.connectionID
 	s.pendingStatus, s.pendingConfig = nil, nil
 	s.statusDirty, s.configDirty = false, false
 	s.mu.Unlock()
@@ -320,6 +329,32 @@ func (s *MQTTService) publishUpdates() {
 	}
 	if configDirty {
 		s.publishConfig(config)
+	}
+	s.publishReadyAfterInitialState(connectionID, configDirty, statusDirty)
+}
+
+func (s *MQTTService) publishReadyAfterInitialState(connectionID uint64, configPublished, statusPublished bool) {
+	s.mu.Lock()
+	if !s.connected || connectionID != s.connectionID {
+		s.mu.Unlock()
+		return
+	}
+	s.initialConfigPublished = s.initialConfigPublished || configPublished
+	s.initialStatusPublished = s.initialStatusPublished || statusPublished
+	if !s.initialConfigPublished || !s.initialStatusPublished {
+		s.mu.Unlock()
+		return
+	}
+	publishDiscovery := s.discoveryPending
+	s.discoveryPending = false
+	publishOnline := !s.onlinePublished
+	s.onlinePublished = true
+	s.mu.Unlock()
+	if publishDiscovery {
+		s.publishDeviceDiscovery()
+	}
+	if publishOnline {
+		s.publish(s.availabilityTopic(), mqttOnlinePayload, true)
 	}
 }
 
@@ -483,15 +518,14 @@ func (s *MQTTService) batteryUnitMetadata() map[string]any {
 	}
 }
 
-func (s *MQTTService) refreshBatteryDiscovery(battery string) {
+func (s *MQTTService) updateBatteryType(battery string) {
 	s.mu.Lock()
+	defer s.mu.Unlock()
 	if battery == "" || battery == s.batteryType {
-		s.mu.Unlock()
 		return
 	}
 	s.batteryType = battery
-	s.mu.Unlock()
-	s.publishDeviceDiscovery()
+	s.discoveryPending = true
 }
 
 func (s *MQTTService) componentBase(objectID, name string) map[string]any {
