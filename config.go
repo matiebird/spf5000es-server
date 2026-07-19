@@ -23,6 +23,11 @@ type MQTTConfig struct {
 	Port              int
 	Username          string
 	Password          string
+	TLSEnabled        bool
+	TLSCAFile         string
+	TLSCertFile       string
+	TLSKeyFile        string
+	TLSServerName     string
 	ClientID          string
 	Keepalive         time.Duration
 	WillDelay         time.Duration
@@ -68,6 +73,11 @@ func logConfig(logger *slog.Logger, c AppConfig) {
 		password = "configured"
 	}
 	setting("MQTT.PASSWORD", password)
+	setting("MQTT.TLS_ENABLED", c.MQTT.TLSEnabled)
+	setting("MQTT.TLS_CA_FILE", c.MQTT.TLSCAFile)
+	setting("MQTT.TLS_CERT_FILE", c.MQTT.TLSCertFile)
+	setting("MQTT.TLS_KEY_FILE", c.MQTT.TLSKeyFile)
+	setting("MQTT.TLS_SERVER_NAME", c.MQTT.TLSServerName)
 	setting("MQTT.CLIENT_ID", c.MQTT.ClientID)
 	setting("MQTT.KEEPALIVE_SEC", c.MQTT.Keepalive.Seconds())
 	setting("MQTT.WILL_DELAY_SEC", c.MQTT.WillDelay.Seconds())
@@ -108,6 +118,10 @@ func readConfig(path string) (AppConfig, error) {
 		return AppConfig{}, err
 	}
 	mqttPort, err := intValue(cfg, "MQTT", "PORT", 1883)
+	if err != nil {
+		return AppConfig{}, err
+	}
+	tlsEnabled, err := boolValue(cfg, "MQTT", "TLS_ENABLED", false)
 	if err != nil {
 		return AppConfig{}, err
 	}
@@ -159,6 +173,11 @@ func readConfig(path string) (AppConfig, error) {
 			Port:              mqttPort,
 			Username:          optionalValue(cfg, "MQTT", "USER"),
 			Password:          optionalValue(cfg, "MQTT", "PASSWORD"),
+			TLSEnabled:        tlsEnabled,
+			TLSCAFile:         optionalValue(cfg, "MQTT", "TLS_CA_FILE"),
+			TLSCertFile:       optionalValue(cfg, "MQTT", "TLS_CERT_FILE"),
+			TLSKeyFile:        optionalValue(cfg, "MQTT", "TLS_KEY_FILE"),
+			TLSServerName:     optionalValue(cfg, "MQTT", "TLS_SERVER_NAME"),
 			ClientID:          value(cfg, "MQTT", "CLIENT_ID", haDeviceID),
 			Keepalive:         keepalive,
 			WillDelay:         willDelay,
@@ -206,6 +225,12 @@ func readConfig(path string) (AppConfig, error) {
 	}
 	if app.MQTT.Port < 1 || app.MQTT.Port > 65535 {
 		return AppConfig{}, fmt.Errorf("MQTT.PORT must be between 1 and 65535")
+	}
+	if (app.MQTT.TLSCertFile == "") != (app.MQTT.TLSKeyFile == "") {
+		return AppConfig{}, fmt.Errorf("MQTT.TLS_CERT_FILE and MQTT.TLS_KEY_FILE must be configured together")
+	}
+	if !app.MQTT.TLSEnabled && (app.MQTT.TLSCAFile != "" || app.MQTT.TLSCertFile != "" || app.MQTT.TLSServerName != "") {
+		return AppConfig{}, fmt.Errorf("MQTT TLS files and server name require MQTT.TLS_ENABLED=true")
 	}
 	if err := validateMQTTIdentifier("MQTT.CLIENT_ID", app.MQTT.ClientID, false); err != nil {
 		return AppConfig{}, err
@@ -264,6 +289,19 @@ func intValue(cfg *ini.File, section, key string, fallback int) (int, error) {
 	return parsed, nil
 }
 
+func boolValue(cfg *ini.File, section, key string, fallback bool) (bool, error) {
+	entry, err := cfg.Section(section).GetKey(key)
+	if err != nil {
+		return fallback, nil
+	}
+	raw := strings.TrimSpace(entry.String())
+	parsed, err := strconv.ParseBool(raw)
+	if err != nil {
+		return false, fmt.Errorf("invalid %s.%s %q: %w", section, key, raw, err)
+	}
+	return parsed, nil
+}
+
 func durationSeconds(cfg *ini.File, section, key string, fallback float64) (time.Duration, error) {
 	entry, err := cfg.Section(section).GetKey(key)
 	if err != nil {
@@ -285,7 +323,7 @@ func durationSeconds(cfg *ini.File, section, key string, fallback float64) (time
 
 var configSchema = map[string]map[string]struct{}{
 	"MODBUS":   keys("PORT", "TIMEOUT_SEC"),
-	"MQTT":     keys("HOST", "PORT", "USER", "PASSWORD", "CLIENT_ID", "KEEPALIVE_SEC", "WILL_DELAY_SEC", "DISCONNECT_TIMEOUT_SEC", "TOPIC_PREFIX", "HA_DISCOVERY_PREFIX", "HA_DEVICE_ID", "HA_DEVICE_NAME"),
+	"MQTT":     keys("HOST", "PORT", "USER", "PASSWORD", "TLS_ENABLED", "TLS_CA_FILE", "TLS_CERT_FILE", "TLS_KEY_FILE", "TLS_SERVER_NAME", "CLIENT_ID", "KEEPALIVE_SEC", "WILL_DELAY_SEC", "DISCONNECT_TIMEOUT_SEC", "TOPIC_PREFIX", "HA_DISCOVERY_PREFIX", "HA_DEVICE_ID", "HA_DEVICE_NAME"),
 	"POLLING":  keys("CONFIG_INTERVAL_SEC", "STATUS_INTERVAL_SEC"),
 	"RECOVERY": keys("RECONNECT_ATTEMPTS", "INITIAL_BACKOFF_SEC", "MAX_BACKOFF_SEC", "RESET_COOLDOWN_SEC"),
 	"LOGGING":  keys("LEVEL"),

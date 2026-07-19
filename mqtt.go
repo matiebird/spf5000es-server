@@ -2,10 +2,13 @@ package main
 
 import (
 	"context"
+	"crypto/tls"
+	"crypto/x509"
 	"encoding/json"
 	"fmt"
 	"log/slog"
 	"net/url"
+	"os"
 	"regexp"
 	"strconv"
 	"strings"
@@ -84,8 +87,12 @@ func NewMQTTService(commands inverterCommandService, config MQTTConfig) *MQTTSer
 
 	willDelay := uint32(config.WillDelay / time.Second)
 	sessionExpiry := max(uint32(60), willDelay+1)
+	scheme := "mqtt"
+	if config.TLSEnabled {
+		scheme = "tls"
+	}
 	service.clientConfig = autopaho.ClientConfig{
-		ServerUrls:                    []*url.URL{{Scheme: "mqtt", Host: fmt.Sprintf("%s:%d", config.Host, config.Port)}},
+		ServerUrls:                    []*url.URL{{Scheme: scheme, Host: fmt.Sprintf("%s:%d", config.Host, config.Port)}},
 		KeepAlive:                     uint16(config.Keepalive / time.Second),
 		CleanStartOnInitialConnection: false,
 		SessionExpiryInterval:         sessionExpiry,
@@ -127,7 +134,14 @@ func NewMQTTService(commands inverterCommandService, config MQTTConfig) *MQTTSer
 }
 
 func (s *MQTTService) Start() error {
-	slog.Info("connecting MQTT broker", "host", s.config.Host, "port", s.config.Port, "client_id", s.config.ClientID)
+	if s.config.TLSEnabled {
+		tlsConfig, err := mqttTLSConfig(s.config)
+		if err != nil {
+			return err
+		}
+		s.clientConfig.TlsCfg = tlsConfig
+	}
+	slog.Info("connecting MQTT broker", "host", s.config.Host, "port", s.config.Port, "tls", s.config.TLSEnabled, "client_id", s.config.ClientID)
 	client, err := autopaho.NewConnection(context.Background(), s.clientConfig)
 	if err != nil {
 		return fmt.Errorf("start MQTT client: %w", err)
@@ -136,6 +150,32 @@ func (s *MQTTService) Start() error {
 	s.client = client
 	s.mu.Unlock()
 	return nil
+}
+
+func mqttTLSConfig(config MQTTConfig) (*tls.Config, error) {
+	tlsConfig := &tls.Config{MinVersion: tls.VersionTLS12, ServerName: config.TLSServerName}
+	if config.TLSCAFile != "" {
+		contents, err := os.ReadFile(config.TLSCAFile)
+		if err != nil {
+			return nil, fmt.Errorf("read MQTT TLS CA file: %w", err)
+		}
+		roots, err := x509.SystemCertPool()
+		if err != nil || roots == nil {
+			roots = x509.NewCertPool()
+		}
+		if !roots.AppendCertsFromPEM(contents) {
+			return nil, fmt.Errorf("MQTT.TLS_CA_FILE contains no valid PEM certificates")
+		}
+		tlsConfig.RootCAs = roots
+	}
+	if config.TLSCertFile != "" {
+		certificate, err := tls.LoadX509KeyPair(config.TLSCertFile, config.TLSKeyFile)
+		if err != nil {
+			return nil, fmt.Errorf("load MQTT TLS client certificate: %w", err)
+		}
+		tlsConfig.Certificates = []tls.Certificate{certificate}
+	}
+	return tlsConfig, nil
 }
 
 func (s *MQTTService) Run(ctx context.Context) error {

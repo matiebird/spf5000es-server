@@ -25,6 +25,11 @@ Edit `config.ini` and set at least:
 - `MQTT.HOST` to the MQTT broker address
 - `MQTT.USER` and `MQTT.PASSWORD` if authentication is required
 
+For a broker reached over an untrusted network, set `MQTT.TLS_ENABLED = true`.
+The system trust store is used by default. `MQTT.TLS_CA_FILE` can add a private
+CA; `MQTT.TLS_CERT_FILE` and `MQTT.TLS_KEY_FILE` configure mutual TLS, and
+`MQTT.TLS_SERVER_NAME` overrides the certificate name when necessary.
+
 Run the server from the repository directory:
 
 ```sh

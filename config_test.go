@@ -109,6 +109,9 @@ func TestReadConfigRejectsInvalidValues(t *testing.T) {
 		{"empty normalized topic", "[MQTT]\nTOPIC_PREFIX=///"},
 		{"path device ID", "[MQTT]\nHA_DEVICE_ID=solar/inverter"},
 		{"control character client ID", "[MQTT]\nCLIENT_ID=bad\x01id"},
+		{"invalid TLS boolean", "[MQTT]\nTLS_ENABLED=perhaps"},
+		{"TLS options without TLS", "[MQTT]\nTLS_CA_FILE=ca.pem"},
+		{"TLS certificate without key", "[MQTT]\nTLS_ENABLED=true\nTLS_CERT_FILE=client.pem"},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {

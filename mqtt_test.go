@@ -2,11 +2,32 @@ package main
 
 import (
 	"context"
+	"crypto/tls"
 	"encoding/json"
 	"testing"
 
 	"github.com/eclipse/paho.golang/paho"
 )
+
+func TestMQTTTransportSchemeAndTLSMinimum(t *testing.T) {
+	plain := NewMQTTService(nil, MQTTConfig{Host: "broker", Port: 1883})
+	if got := plain.clientConfig.ServerUrls[0].Scheme; got != "mqtt" {
+		t.Fatalf("plain MQTT scheme = %q, want mqtt", got)
+	}
+
+	secureConfig := MQTTConfig{Host: "broker", Port: 8883, TLSEnabled: true}
+	secure := NewMQTTService(nil, secureConfig)
+	if got := secure.clientConfig.ServerUrls[0].Scheme; got != "tls" {
+		t.Fatalf("secure MQTT scheme = %q, want tls", got)
+	}
+	tlsConfig, err := mqttTLSConfig(secureConfig)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if tlsConfig.MinVersion != tls.VersionTLS12 {
+		t.Fatalf("minimum TLS version = %d, want TLS 1.2", tlsConfig.MinVersion)
+	}
+}
 
 type mqttPublication struct {
 	topic   string
