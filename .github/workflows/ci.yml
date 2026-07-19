@@ -27,6 +27,16 @@ jobs:
           go-version-file: go.mod
           cache-dependency-path: go.sum
 
+      - name: Check shell scripts
+        run: shellcheck systemd/*.sh systemd/spf5000es-recovery
+
+      - name: Check for known Go vulnerabilities
+        uses: golang/govulncheck-action@v1
+        with:
+          repo-checkout: false
+          go-version-file: go.mod
+          cache: false
+
       - name: Test
         run: go test -race ./...
 

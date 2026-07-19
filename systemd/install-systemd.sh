@@ -37,10 +37,10 @@ while [ "$#" -gt 0 ]; do
 	shift
 done
 
-script_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+script_dir=$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd)
 source_dir=$script_dir
 if [ -f "$script_dir/../go.mod" ]; then
-	source_dir=$(CDPATH= cd -- "$script_dir/.." && pwd)
+	source_dir=$(CDPATH='' cd -- "$script_dir/.." && pwd)
 fi
 
 require_commands() {
@@ -114,6 +114,8 @@ install_remote() {
 	ssh -t "$remote_host" \
 		"sudo '$remote_dir/install-systemd.sh' --prebuilt '$remote_dir/$service_name' $remote_start_flag" \
 		|| install_status=$?
+	# remote_dir is created remotely and restricted to /tmp/spf5000es-install.* above.
+	# shellcheck disable=SC2029
 	ssh "$remote_host" "rm -rf '$remote_dir'" || true
 	exit "$install_status"
 }

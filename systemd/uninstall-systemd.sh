@@ -26,7 +26,7 @@ while [ "$#" -gt 0 ]; do
 	shift
 done
 
-script_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+script_dir=$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd)
 
 require_commands() {
 	for command in "$@"; do
@@ -58,6 +58,8 @@ uninstall_remote() {
 	ssh -t "$remote_host" \
 		"sudo '$remote_dir/uninstall-systemd.sh'" \
 		|| uninstall_status=$?
+	# remote_dir is created remotely and restricted to /tmp/spf5000es-uninstall.* above.
+	# shellcheck disable=SC2029
 	ssh "$remote_host" "rm -rf '$remote_dir'" || true
 	exit "$uninstall_status"
 }
