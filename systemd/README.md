@@ -20,6 +20,25 @@ sudo systemctl restart spf5000es-server.service
 Reinstalling preserves the configuration and `/usr/local/bin/spf5000es-recovery`.
 Replace the latter to customize hardware recovery.
 
+## Uninstall
+
+```sh
+sudo ./systemd/uninstall-systemd.sh
+```
+
+To uninstall from another machine over SSH:
+
+```sh
+./systemd/uninstall-systemd.sh pi@raspberrypi.local
+```
+
+The remote user needs `sudo`.
+
+The uninstaller keeps all configuration files under
+`/etc/spf5000es-server` intact and reports that they were not removed. It also
+keeps `/usr/local/bin/spf5000es-recovery` because that program may have been
+customized.
+
 ## Useful commands
 
 ```sh
