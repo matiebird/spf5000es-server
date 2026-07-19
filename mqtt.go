@@ -219,8 +219,8 @@ func (s *MQTTService) onConnect(client mqttClient, connectionID uint64) {
 	s.mu.Unlock()
 
 	_, err := client.Subscribe(context.Background(), &paho.Subscribe{Subscriptions: []paho.SubscribeOptions{
-		{Topic: s.configFilter, QoS: 0},
-		{Topic: s.timeSyncCommand, QoS: 0},
+		{Topic: s.configFilter, QoS: 1},
+		{Topic: s.timeSyncCommand, QoS: 1},
 	}})
 	if err != nil {
 		slog.Error("MQTT connection setup failed while subscribing to command topics", "error", err)
@@ -443,6 +443,7 @@ func (s *MQTTService) publishDeviceDiscovery() {
 	payload := s.componentBase(objectID, "Sync Time")
 	payload["command_topic"] = s.timeSyncCommand
 	payload["payload_press"] = "sync"
+	payload["qos"] = 1
 	payload["retain"] = false
 	payload["icon"] = "mdi:clock-sync-outline"
 	components[objectID] = deviceComponent("button", payload)
@@ -478,6 +479,7 @@ func (s *MQTTService) configDiscovery(definition registerDef) (string, map[strin
 	if writable {
 		payload["command_topic"] = s.baseTopic() + "/config/" + slug(definition.Key) + "/set"
 		payload["retain"] = false
+		payload["qos"] = 1
 	}
 
 	if definition.Read != nil && isBooleanRegister(definition.Key) {

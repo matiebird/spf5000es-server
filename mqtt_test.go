@@ -36,15 +36,17 @@ type mqttPublication struct {
 }
 
 type recordingMQTTClient struct {
-	open         bool
-	publications []mqttPublication
+	open          bool
+	publications  []mqttPublication
+	subscriptions []paho.SubscribeOptions
 }
 
 func (c *recordingMQTTClient) Disconnect(context.Context) error {
 	c.open = false
 	return nil
 }
-func (c *recordingMQTTClient) Subscribe(context.Context, *paho.Subscribe) (*paho.Suback, error) {
+func (c *recordingMQTTClient) Subscribe(_ context.Context, subscribe *paho.Subscribe) (*paho.Suback, error) {
+	c.subscriptions = append(c.subscriptions, subscribe.Subscriptions...)
 	return &paho.Suback{}, nil
 }
 func (c *recordingMQTTClient) Publish(_ context.Context, publish *paho.Publish) (*paho.PublishResponse, error) {
@@ -171,6 +173,37 @@ func TestMQTTDiscoveryDoesNotRetainCommands(t *testing.T) {
 		}
 		if retain, ok := component["retain"].(bool); !ok || retain {
 			t.Errorf("command component %q retain = %#v, want false", objectID, component["retain"])
+		}
+		if qos, ok := component["qos"].(float64); !ok || qos != 1 {
+			t.Errorf("command component %q qos = %#v, want 1", objectID, component["qos"])
+		}
+		if objectID != "test_inverter_sync_time" {
+			if optimistic, ok := component["optimistic"].(bool); !ok || !optimistic {
+				t.Errorf("command component %q optimistic = %#v, want true", objectID, component["optimistic"])
+			}
+		}
+	}
+}
+
+type noopCommandService struct{}
+
+func (noopCommandService) QueueConfigWrite(string, any) error { return nil }
+func (noopCommandService) SetPollingEnabled(bool)             {}
+func (noopCommandService) RequestTimeSync() error             { return nil }
+
+func TestMQTTSubscribesToCommandsAtQoS1(t *testing.T) {
+	client := &recordingMQTTClient{}
+	service := NewMQTTService(noopCommandService{}, MQTTConfig{
+		TopicPrefix: "inverter", HADiscoveryPrefix: "homeassistant", HADeviceID: "test_inverter",
+	})
+	service.onConnect(client, 0)
+
+	if len(client.subscriptions) != 2 {
+		t.Fatalf("subscriptions = %d, want 2", len(client.subscriptions))
+	}
+	for _, subscription := range client.subscriptions {
+		if subscription.QoS != 1 {
+			t.Errorf("subscription %q QoS = %d, want 1", subscription.Topic, subscription.QoS)
 		}
 	}
 }
