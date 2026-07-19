@@ -28,6 +28,11 @@ var (
 	mqttFalsePayload   = []byte("false")
 )
 
+const (
+	mqttSubscribeInitialBackoff = time.Second
+	mqttSubscribeMaxBackoff     = 30 * time.Second
+)
+
 type mqttClient interface {
 	Subscribe(context.Context, *paho.Subscribe) (*paho.Suback, error)
 	Publish(context.Context, *paho.Publish) (*paho.PublishResponse, error)
@@ -61,6 +66,7 @@ type MQTTService struct {
 	configTopics           map[string]string
 	updateWake             chan struct{}
 	connectionID           uint64
+	sleep                  func(context.Context, time.Duration) error
 }
 
 func NewMQTTService(commands inverterCommandService, config MQTTConfig) *MQTTService {
@@ -70,6 +76,7 @@ func NewMQTTService(commands inverterCommandService, config MQTTConfig) *MQTTSer
 		statusTopics:    make(map[string]string, len(inputRegisters)),
 		configTopics:    make(map[string]string, len(holdingRegisters)),
 		updateWake:      make(chan struct{}, 1),
+		sleep:           sleepContext,
 	}
 	service.base = strings.Trim(config.TopicPrefix, "/")
 	service.availability = service.base + "/availability"
@@ -218,12 +225,8 @@ func (s *MQTTService) onConnect(client mqttClient, connectionID uint64) {
 	s.client = client
 	s.mu.Unlock()
 
-	_, err := client.Subscribe(context.Background(), &paho.Subscribe{Subscriptions: []paho.SubscribeOptions{
-		{Topic: s.configFilter, QoS: 1},
-		{Topic: s.timeSyncCommand, QoS: 1},
-	}})
-	if err != nil {
-		slog.Error("MQTT connection setup failed while subscribing to command topics", "error", err)
+	if err := s.subscribeCommands(client, connectionID); err != nil {
+		slog.Warn("MQTT connection setup stopped", "error", err)
 		return
 	}
 
@@ -239,6 +242,33 @@ func (s *MQTTService) onConnect(client mqttClient, connectionID uint64) {
 	s.commands.SetPollingEnabled(true)
 	s.mu.Unlock()
 	s.requestUpdatePublish()
+}
+
+func (s *MQTTService) subscribeCommands(client mqttClient, connectionID uint64) error {
+	subscribe := &paho.Subscribe{Subscriptions: []paho.SubscribeOptions{
+		{Topic: s.configFilter, QoS: 1},
+		{Topic: s.timeSyncCommand, QoS: 1},
+	}}
+	delay := mqttSubscribeInitialBackoff
+	for attempt := 1; ; attempt++ {
+		s.mu.Lock()
+		current := connectionID == s.connectionID
+		s.mu.Unlock()
+		if !current {
+			return fmt.Errorf("MQTT connection changed during setup")
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), s.config.OperationTimeout)
+		_, subscribeErr := client.Subscribe(ctx, subscribe)
+		cancel()
+		if subscribeErr == nil {
+			return nil
+		}
+		slog.Warn("MQTT command subscription failed; retrying", "attempt", attempt, "retry_in", delay, "error", subscribeErr)
+		if err := s.sleep(context.Background(), delay); err != nil {
+			return err
+		}
+		delay = min(delay*2, mqttSubscribeMaxBackoff)
+	}
 }
 
 func (s *MQTTService) onConnectionLost() {

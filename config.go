@@ -31,6 +31,7 @@ type MQTTConfig struct {
 	ClientID          string
 	Keepalive         time.Duration
 	WillDelay         time.Duration
+	OperationTimeout  time.Duration
 	DisconnectTimeout time.Duration
 	TopicPrefix       string
 	HADiscoveryPrefix string
@@ -81,6 +82,7 @@ func logConfig(logger *slog.Logger, c AppConfig) {
 	setting("MQTT.CLIENT_ID", c.MQTT.ClientID)
 	setting("MQTT.KEEPALIVE_SEC", c.MQTT.Keepalive.Seconds())
 	setting("MQTT.WILL_DELAY_SEC", c.MQTT.WillDelay.Seconds())
+	setting("MQTT.OPERATION_TIMEOUT_SEC", c.MQTT.OperationTimeout.Seconds())
 	setting("MQTT.DISCONNECT_TIMEOUT_SEC", c.MQTT.DisconnectTimeout.Seconds())
 	setting("MQTT.TOPIC_PREFIX", c.MQTT.TopicPrefix)
 	setting("MQTT.HA_DISCOVERY_PREFIX", c.MQTT.HADiscoveryPrefix)
@@ -133,6 +135,10 @@ func readConfig(path string) (AppConfig, error) {
 	if err != nil {
 		return AppConfig{}, err
 	}
+	operationTimeout, err := durationSeconds(cfg, "MQTT", "OPERATION_TIMEOUT_SEC", 10)
+	if err != nil {
+		return AppConfig{}, err
+	}
 	disconnectTimeout, err := durationSeconds(cfg, "MQTT", "DISCONNECT_TIMEOUT_SEC", 5)
 	if err != nil {
 		return AppConfig{}, err
@@ -181,6 +187,7 @@ func readConfig(path string) (AppConfig, error) {
 			ClientID:          value(cfg, "MQTT", "CLIENT_ID", haDeviceID),
 			Keepalive:         keepalive,
 			WillDelay:         willDelay,
+			OperationTimeout:  operationTimeout,
 			DisconnectTimeout: disconnectTimeout,
 			TopicPrefix:       normalizeTopic(value(cfg, "MQTT", "TOPIC_PREFIX", haDeviceID), haDeviceID),
 			HADiscoveryPrefix: normalizeTopic(value(cfg, "MQTT", "HA_DISCOVERY_PREFIX", "homeassistant"), "homeassistant"),
@@ -210,6 +217,9 @@ func readConfig(path string) (AppConfig, error) {
 	}
 	if app.MQTT.WillDelay < time.Second || app.MQTT.WillDelay > time.Duration(math.MaxUint32-1)*time.Second {
 		return AppConfig{}, fmt.Errorf("MQTT.WILL_DELAY_SEC must be between 1 and %d", uint64(math.MaxUint32-1))
+	}
+	if app.MQTT.OperationTimeout < 100*time.Millisecond {
+		return AppConfig{}, fmt.Errorf("MQTT.OPERATION_TIMEOUT_SEC must be at least 0.1")
 	}
 	if app.Polling.ConfigInterval < time.Second {
 		return AppConfig{}, fmt.Errorf("POLLING.CONFIG_INTERVAL_SEC must be at least 1")
@@ -323,7 +333,7 @@ func durationSeconds(cfg *ini.File, section, key string, fallback float64) (time
 
 var configSchema = map[string]map[string]struct{}{
 	"MODBUS":   keys("PORT", "TIMEOUT_SEC"),
-	"MQTT":     keys("HOST", "PORT", "USER", "PASSWORD", "TLS_ENABLED", "TLS_CA_FILE", "TLS_CERT_FILE", "TLS_KEY_FILE", "TLS_SERVER_NAME", "CLIENT_ID", "KEEPALIVE_SEC", "WILL_DELAY_SEC", "DISCONNECT_TIMEOUT_SEC", "TOPIC_PREFIX", "HA_DISCOVERY_PREFIX", "HA_DEVICE_ID", "HA_DEVICE_NAME"),
+	"MQTT":     keys("HOST", "PORT", "USER", "PASSWORD", "TLS_ENABLED", "TLS_CA_FILE", "TLS_CERT_FILE", "TLS_KEY_FILE", "TLS_SERVER_NAME", "CLIENT_ID", "KEEPALIVE_SEC", "WILL_DELAY_SEC", "OPERATION_TIMEOUT_SEC", "DISCONNECT_TIMEOUT_SEC", "TOPIC_PREFIX", "HA_DISCOVERY_PREFIX", "HA_DEVICE_ID", "HA_DEVICE_NAME"),
 	"POLLING":  keys("CONFIG_INTERVAL_SEC", "STATUS_INTERVAL_SEC"),
 	"RECOVERY": keys("RECONNECT_ATTEMPTS", "INITIAL_BACKOFF_SEC", "MAX_BACKOFF_SEC", "RESET_COOLDOWN_SEC"),
 	"LOGGING":  keys("LEVEL"),

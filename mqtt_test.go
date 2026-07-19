@@ -4,7 +4,9 @@ import (
 	"context"
 	"crypto/tls"
 	"encoding/json"
+	"errors"
 	"testing"
+	"time"
 
 	"github.com/eclipse/paho.golang/paho"
 )
@@ -39,15 +41,23 @@ type recordingMQTTClient struct {
 	open          bool
 	publications  []mqttPublication
 	subscriptions []paho.SubscribeOptions
+	subscribeErrs []error
+	disconnects   int
 }
 
 func (c *recordingMQTTClient) Disconnect(context.Context) error {
 	c.open = false
+	c.disconnects++
 	return nil
 }
 func (c *recordingMQTTClient) Subscribe(_ context.Context, subscribe *paho.Subscribe) (*paho.Suback, error) {
 	c.subscriptions = append(c.subscriptions, subscribe.Subscriptions...)
-	return &paho.Suback{}, nil
+	if len(c.subscribeErrs) == 0 {
+		return &paho.Suback{}, nil
+	}
+	err := c.subscribeErrs[0]
+	c.subscribeErrs = c.subscribeErrs[1:]
+	return &paho.Suback{}, err
 }
 func (c *recordingMQTTClient) Publish(_ context.Context, publish *paho.Publish) (*paho.PublishResponse, error) {
 	c.publications = append(c.publications, mqttPublication{
@@ -195,6 +205,7 @@ func TestMQTTSubscribesToCommandsAtQoS1(t *testing.T) {
 	client := &recordingMQTTClient{}
 	service := NewMQTTService(noopCommandService{}, MQTTConfig{
 		TopicPrefix: "inverter", HADiscoveryPrefix: "homeassistant", HADeviceID: "test_inverter",
+		OperationTimeout: time.Second, DisconnectTimeout: time.Second,
 	})
 	service.onConnect(client, 0)
 
@@ -205,6 +216,26 @@ func TestMQTTSubscribesToCommandsAtQoS1(t *testing.T) {
 		if subscription.QoS != 1 {
 			t.Errorf("subscription %q QoS = %d, want 1", subscription.Topic, subscription.QoS)
 		}
+	}
+}
+
+func TestMQTTRetriesCommandSubscriptions(t *testing.T) {
+	client := &recordingMQTTClient{subscribeErrs: []error{
+		errors.New("temporary subscription failure"),
+		errors.New("another temporary subscription failure"),
+	}}
+	service := NewMQTTService(noopCommandService{}, MQTTConfig{
+		TopicPrefix: "inverter", HADiscoveryPrefix: "homeassistant", HADeviceID: "test_inverter",
+		OperationTimeout: time.Second, DisconnectTimeout: time.Second,
+	})
+	service.sleep = func(context.Context, time.Duration) error { return nil }
+	service.onConnect(client, 0)
+
+	if got := len(client.subscriptions); got != 6 {
+		t.Fatalf("subscription entries = %d, want 6", got)
+	}
+	if client.disconnects != 0 {
+		t.Fatalf("disconnects = %d, want 0", client.disconnects)
 	}
 }
 

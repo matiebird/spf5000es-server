@@ -54,6 +54,9 @@ LEVEL = warning
 	if got.MQTT.WillDelay != 5*time.Minute {
 		t.Fatalf("MQTT will delay = %v, want 5m", got.MQTT.WillDelay)
 	}
+	if got.MQTT.OperationTimeout != 10*time.Second {
+		t.Fatalf("MQTT operation timeout = %v, want 10s", got.MQTT.OperationTimeout)
+	}
 	if got.Recovery.ReconnectAttempts != 3 || got.Recovery.InitialBackoff != time.Second ||
 		got.Recovery.MaxBackoff != 10*time.Second || got.Recovery.ResetCooldown != 5*time.Minute {
 		t.Fatalf("recovery defaults = %#v", got.Recovery)
@@ -103,6 +106,7 @@ func TestReadConfigRejectsInvalidValues(t *testing.T) {
 		{"too many reconnect attempts", "[RECOVERY]\nRECONNECT_ATTEMPTS=21"},
 		{"backoff maximum below initial", "[RECOVERY]\nINITIAL_BACKOFF_SEC=5\nMAX_BACKOFF_SEC=1"},
 		{"short keepalive", "[MQTT]\nKEEPALIVE_SEC=0.5"},
+		{"short MQTT operation timeout", "[MQTT]\nOPERATION_TIMEOUT_SEC=0.01"},
 		{"short config interval", "[POLLING]\nCONFIG_INTERVAL_SEC=0.5"},
 		{"empty host", "[MQTT]\nHOST="},
 		{"wildcard topic", "[MQTT]\nTOPIC_PREFIX=solar/+"},
