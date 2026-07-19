@@ -1,5 +1,5 @@
 [Unit]
-Description=Reset Growatt inverter USB device for SPF 5000 ES recovery
+Description=Reset Growatt inverter connection for SPF 5000 ES recovery
 StartLimitIntervalSec=300
 StartLimitBurst=1
 

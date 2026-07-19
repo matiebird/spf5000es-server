@@ -138,17 +138,17 @@ func (i *RecoveringInverter) executeWithRecoveryLocked(ctx context.Context, oper
 
 	now := i.now()
 	if !i.lastReset.IsZero() && now.Sub(i.lastReset) < i.config.ResetCooldown {
-		return errors.Join(operationErr, fmt.Errorf("USB reset suppressed during %s cooldown", i.config.ResetCooldown))
+		return errors.Join(operationErr, fmt.Errorf("inverter reset suppressed during %s cooldown", i.config.ResetCooldown))
 	}
-	slog.Warn("requesting privileged inverter USB reset", "unit", recoveryUnit)
+	slog.Warn("requesting privileged inverter reset", "unit", recoveryUnit)
 	if err := i.resetter.RequestReset(ctx); err != nil {
-		return errors.Join(operationErr, fmt.Errorf("request USB reset: %w", err))
+		return errors.Join(operationErr, fmt.Errorf("request inverter reset: %w", err))
 	}
 	i.lastReset = now
 	if err := i.reconnectAndValidateLocked(ctx, operation); err != nil {
-		return errors.Join(operationErr, fmt.Errorf("reconnect after USB reset: %w", err))
+		return errors.Join(operationErr, fmt.Errorf("reconnect after inverter reset: %w", err))
 	}
-	slog.Info("inverter recovered after USB reset")
+	slog.Info("inverter recovered after reset")
 	i.notifyAvailabilityLocked(true)
 	return nil
 }
