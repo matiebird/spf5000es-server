@@ -10,12 +10,15 @@ Install Go, polkit, and `usbreset`, then run:
 sudo ./systemd/install-systemd.sh
 ```
 
-Edit the generated configuration and restart the service:
+Edit the generated configuration and start the service:
 
 ```sh
 sudoedit /etc/spf5000es-server/config.ini
-sudo systemctl restart spf5000es-server.service
+sudo systemctl enable --now spf5000es-server.service
 ```
+
+The installer leaves the service stopped by default so the configuration can
+be reviewed first. Pass `--start` to enable and start it immediately.
 
 Reinstalling preserves the configuration and `/usr/local/bin/spf5000es-recovery`.
 Replace the latter to customize hardware recovery.
@@ -48,8 +51,8 @@ systemctl status spf5000es-server.service
 # Follow its logs
 journalctl -u spf5000es-server.service -f
 
-# Install without starting the service
-sudo ./systemd/install-systemd.sh --no-start
+# Install and start immediately
+sudo ./systemd/install-systemd.sh --start
 ```
 
 ## Remote install

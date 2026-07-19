@@ -46,7 +46,7 @@ On the target Linux machine:
 ```sh
 sudo ./systemd/install-systemd.sh
 sudoedit /etc/spf5000es-server/config.ini
-sudo systemctl restart spf5000es-server.service
+sudo systemctl enable --now spf5000es-server.service
 ```
 
 Useful commands:
@@ -56,7 +56,9 @@ systemctl status spf5000es-server.service
 journalctl -u spf5000es-server.service -f
 ```
 
-To build locally and install on another Linux machine over SSH:
+The installer leaves the service stopped so the configuration can be reviewed.
+Pass `--start` to enable and start it immediately. To build locally and install
+on another Linux machine over SSH:
 
 ```sh
 ./systemd/install-systemd.sh user@hostname

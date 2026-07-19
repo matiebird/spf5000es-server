@@ -9,17 +9,18 @@ binary_path=/usr/local/bin/spf5000es-server
 recovery_program=/usr/local/bin/spf5000es-recovery
 unit_dir=/etc/systemd/system
 polkit_rules_dir=/etc/polkit-1/rules.d
-start_service=true
+start_service=false
 remote_host=
 prebuilt_binary=
 
 usage() {
-	printf 'Usage: %s [--no-start] [user@hostname]\n' "$0"
-	printf '       sudo %s [--no-start]              # install locally\n' "$0"
+	printf 'Usage: %s [--start|--no-start] [user@hostname]\n' "$0"
+	printf '       sudo %s [--start|--no-start]              # install locally\n' "$0"
 }
 
 while [ "$#" -gt 0 ]; do
 	case "$1" in
+		--start) start_service=true ;;
 		--no-start) start_service=false ;;
 		--prebuilt)
 			[ "$#" -ge 2 ] || { usage >&2; exit 2; }
@@ -107,8 +108,8 @@ install_remote() {
 		"$script_dir/50-spf5000es-recovery.rules" \
 		"$remote_host:$remote_dir/"
 
-	remote_start_flag=
-	[ "$start_service" = true ] || remote_start_flag=--no-start
+	remote_start_flag=--no-start
+	[ "$start_service" = false ] || remote_start_flag=--start
 	install_status=0
 	ssh -t "$remote_host" \
 		"sudo '$remote_dir/install-systemd.sh' --prebuilt '$remote_dir/$service_name' $remote_start_flag" \
