@@ -102,7 +102,7 @@ func readConfig(path string) (AppConfig, error) {
 	if err != nil {
 		return AppConfig{}, err
 	}
-	willDelay, err := durationSeconds(cfg, "MQTT", "WILL_DELAY_SEC", 10)
+	willDelay, err := durationSeconds(cfg, "MQTT", "WILL_DELAY_SEC", 300)
 	if err != nil {
 		return AppConfig{}, err
 	}

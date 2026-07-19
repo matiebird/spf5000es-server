@@ -33,6 +33,9 @@ LEVEL = warning
 	if got.MQTT.Host != "localhost" || got.MQTT.Port != 1883 || got.MQTT.ClientID != "test_inverter" {
 		t.Fatalf("MQTT defaults = %#v", got.MQTT)
 	}
+	if got.MQTT.WillDelay != 5*time.Minute {
+		t.Fatalf("MQTT will delay = %v, want 5m", got.MQTT.WillDelay)
+	}
 	if got.MQTT.Username != "" || got.MQTT.Password != "" {
 		t.Fatalf("optional credentials were not cleared: user=%q password=%q", got.MQTT.Username, got.MQTT.Password)
 	}
