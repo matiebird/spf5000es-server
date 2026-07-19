@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"io"
 	"log/slog"
 	"math"
 	"os"
@@ -387,7 +388,17 @@ func parseLogLevel(raw string) (slog.Level, error) {
 }
 
 func configureLogging(level slog.Level) {
-	slog.SetDefault(slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{
+	slog.SetDefault(slog.New(newTextLogHandler(os.Stderr, level)))
+}
+
+func newTextLogHandler(output io.Writer, level slog.Level) slog.Handler {
+	return slog.NewTextHandler(output, &slog.HandlerOptions{
 		Level: level,
-	})))
+		ReplaceAttr: func(groups []string, attr slog.Attr) slog.Attr {
+			if len(groups) == 0 && attr.Key == slog.TimeKey {
+				return slog.Attr{}
+			}
+			return attr
+		},
+	})
 }

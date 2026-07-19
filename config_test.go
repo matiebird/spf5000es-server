@@ -1,12 +1,30 @@
 package main
 
 import (
+	"bytes"
+	"context"
 	"log/slog"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
+
+func TestTextLogHandlerOmitsTimestamp(t *testing.T) {
+	var output bytes.Buffer
+	logger := slog.New(newTextLogHandler(&output, slog.LevelInfo))
+
+	logger.InfoContext(context.Background(), "service started", "revision", "abc123")
+
+	got := output.String()
+	if strings.Contains(got, "time=") {
+		t.Fatalf("log contains timestamp: %q", got)
+	}
+	if !strings.Contains(got, "level=INFO msg=\"service started\" revision=abc123") {
+		t.Fatalf("log is missing expected fields: %q", got)
+	}
+}
 
 func TestReadConfigAppliesDefaultsAndNormalizesTopics(t *testing.T) {
 	path := writeTestConfig(t, `
