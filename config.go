@@ -44,6 +44,34 @@ type AppConfig struct {
 	LogLevel slog.Level
 }
 
+func logConfig(logger *slog.Logger, c AppConfig) {
+	setting := func(name string, value any) {
+		logger.Info("config", "setting", name, "value", value)
+	}
+
+	setting("MODBUS.PORT", c.Modbus.Port)
+	setting("MODBUS.TIMEOUT_SEC", c.Modbus.Timeout.Seconds())
+	setting("MQTT.HOST", c.MQTT.Host)
+	setting("MQTT.PORT", c.MQTT.Port)
+	setting("MQTT.USER", c.MQTT.Username)
+	password := "not configured"
+	if c.MQTT.Password != "" {
+		password = "configured"
+	}
+	setting("MQTT.PASSWORD", password)
+	setting("MQTT.CLIENT_ID", c.MQTT.ClientID)
+	setting("MQTT.KEEPALIVE_SEC", c.MQTT.Keepalive.Seconds())
+	setting("MQTT.WILL_DELAY_SEC", c.MQTT.WillDelay.Seconds())
+	setting("MQTT.DISCONNECT_TIMEOUT_SEC", c.MQTT.DisconnectTimeout.Seconds())
+	setting("MQTT.TOPIC_PREFIX", c.MQTT.TopicPrefix)
+	setting("MQTT.HA_DISCOVERY_PREFIX", c.MQTT.HADiscoveryPrefix)
+	setting("MQTT.HA_DEVICE_ID", c.MQTT.HADeviceID)
+	setting("MQTT.HA_DEVICE_NAME", c.MQTT.HADeviceName)
+	setting("POLLING.CONFIG_INTERVAL_SEC", c.Polling.ConfigInterval.Seconds())
+	setting("POLLING.STATUS_INTERVAL_SEC", c.Polling.StatusInterval.Seconds())
+	setting("LOGGING.LEVEL", c.LogLevel.String())
+}
+
 func readConfig(path string) (AppConfig, error) {
 	cfg, err := ini.Load(path)
 	if err != nil {

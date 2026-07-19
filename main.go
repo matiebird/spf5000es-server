@@ -46,11 +46,7 @@ func run() (runErr error) {
 		}
 	}()
 
-	slog.Info("service configured",
-		"modbus_port", config.Modbus.Port,
-		"mqtt_broker", fmt.Sprintf("%s:%d", config.MQTT.Host, config.MQTT.Port),
-		"topic_prefix", config.MQTT.TopicPrefix,
-	)
+	logConfig(slog.Default(), config)
 	if err := inverter.Connect(ctx); err != nil {
 		return err
 	}
