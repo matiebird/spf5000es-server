@@ -6,7 +6,9 @@ service_user=spf5000es
 service_group=spf5000es
 config_dir=/etc/spf5000es-server
 binary_path=/usr/local/bin/spf5000es-server
+recovery_program=/usr/local/bin/spf5000es-recovery
 unit_dir=/etc/systemd/system
+polkit_rules_dir=/etc/polkit-1/rules.d
 start_service=true
 remote_host=
 prebuilt_binary=
@@ -101,6 +103,8 @@ install_remote() {
 		"$source_dir/config.ini.example" \
 		"$script_dir/spf5000es-server.service" \
 		"$script_dir/spf5000es-recovery.service" \
+		"$script_dir/spf5000es-recovery" \
+		"$script_dir/50-spf5000es-recovery.rules" \
 		"$remote_host:$remote_dir/"
 
 	remote_start_flag=
@@ -123,18 +127,25 @@ if [ "$(id -u)" -ne 0 ]; then
 	exit 1
 fi
 
-require_commands install systemctl useradd usermod groupadd getent mktemp
-
-if [ ! -x /usr/bin/usbreset ]; then
-	printf 'error: /usr/bin/usbreset is required by the recovery service\n' >&2
-	exit 1
-fi
+require_commands install systemctl pkaction useradd usermod groupadd getent mktemp
 
 config_example=$source_dir/config.ini.example
 if [ ! -e "$config_example" ] || \
 	[ ! -e "$script_dir/spf5000es-server.service" ] || \
-	[ ! -e "$script_dir/spf5000es-recovery.service" ]; then
+	[ ! -e "$script_dir/spf5000es-recovery.service" ] || \
+	[ ! -e "$script_dir/spf5000es-recovery" ] || \
+	[ ! -e "$script_dir/50-spf5000es-recovery.rules" ]; then
 	printf 'error: installer assets are missing from %s\n' "$script_dir" >&2
+	exit 1
+fi
+
+if [ -e "$recovery_program" ]; then
+	if [ ! -x "$recovery_program" ]; then
+		printf 'error: recovery program is not executable: %s\n' "$recovery_program" >&2
+		exit 1
+	fi
+elif [ ! -x /usr/bin/usbreset ]; then
+	printf 'error: /usr/bin/usbreset is required by the default recovery program\n' >&2
 	exit 1
 fi
 
@@ -174,6 +185,14 @@ fi
 install -d -o root -g "$service_group" -m 0750 "$config_dir"
 install -o root -g root -m 0755 "$prebuilt_binary" "$binary_path"
 
+if [ ! -e "$recovery_program" ]; then
+	install -o root -g root -m 0755 \
+		"$script_dir/spf5000es-recovery" "$recovery_program"
+	printf 'Installed default recovery program at %s.\n' "$recovery_program"
+else
+	printf 'Preserved existing recovery program at %s.\n' "$recovery_program"
+fi
+
 if [ ! -e "$config_dir/config.ini" ]; then
 	install -o root -g "$service_group" -m 0640 \
 		"$config_example" "$config_dir/config.ini"
@@ -188,6 +207,10 @@ install -o root -g root -m 0644 \
 	"$script_dir/spf5000es-server.service" \
 	"$script_dir/spf5000es-recovery.service" \
 	"$unit_dir/"
+install -d -o root -g root -m 0755 "$polkit_rules_dir"
+install -o root -g root -m 0644 \
+	"$script_dir/50-spf5000es-recovery.rules" \
+	"$polkit_rules_dir/"
 
 systemctl daemon-reload
 if [ "$start_service" = true ]; then

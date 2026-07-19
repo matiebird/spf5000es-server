@@ -35,10 +35,12 @@ func run() (runErr error) {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
-	inverter := NewInverter(config.Modbus)
+	rawInverter := NewInverter(config.Modbus)
+	inverter := NewRecoveringInverter(rawInverter, systemdResetRequester{}, config.Recovery)
 	pollingService := NewPollingService(inverter, nil, config.Polling)
 	mqttService := NewMQTTService(pollingService, config.MQTT)
 	pollingService.SetSink(mqttService)
+	inverter.SetAvailabilitySink(mqttService)
 	defer func() {
 		mqttService.Stop()
 		if err := inverter.Close(); err != nil {

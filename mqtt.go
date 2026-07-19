@@ -285,6 +285,21 @@ func (s *MQTTService) ConfigUpdated(config map[string]any) {
 	s.signalUpdatePublisher()
 }
 
+func (s *MQTTService) InverterAvailabilityChanged(available bool) {
+	s.mu.Lock()
+	connected := s.connected
+	s.onlinePublished = available && connected
+	s.mu.Unlock()
+	if !connected {
+		return
+	}
+	payload := mqttOfflinePayload
+	if available {
+		payload = mqttOnlinePayload
+	}
+	s.publish(s.availabilityTopic(), payload, true)
+}
+
 func (s *MQTTService) publishConfig(config map[string]any) {
 	for key, value := range config {
 		topic := s.configTopics[key]

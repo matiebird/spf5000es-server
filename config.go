@@ -37,10 +37,18 @@ type PollingConfig struct {
 	StatusInterval time.Duration
 }
 
+type RecoveryConfig struct {
+	ReconnectAttempts int
+	InitialBackoff    time.Duration
+	MaxBackoff        time.Duration
+	ResetCooldown     time.Duration
+}
+
 type AppConfig struct {
 	Modbus   ModbusConfig
 	MQTT     MQTTConfig
 	Polling  PollingConfig
+	Recovery RecoveryConfig
 	LogLevel slog.Level
 }
 
@@ -69,6 +77,10 @@ func logConfig(logger *slog.Logger, c AppConfig) {
 	setting("MQTT.HA_DEVICE_NAME", c.MQTT.HADeviceName)
 	setting("POLLING.CONFIG_INTERVAL_SEC", c.Polling.ConfigInterval.Seconds())
 	setting("POLLING.STATUS_INTERVAL_SEC", c.Polling.StatusInterval.Seconds())
+	setting("RECOVERY.RECONNECT_ATTEMPTS", c.Recovery.ReconnectAttempts)
+	setting("RECOVERY.INITIAL_BACKOFF_SEC", c.Recovery.InitialBackoff.Seconds())
+	setting("RECOVERY.MAX_BACKOFF_SEC", c.Recovery.MaxBackoff.Seconds())
+	setting("RECOVERY.RESET_COOLDOWN_SEC", c.Recovery.ResetCooldown.Seconds())
 	setting("LOGGING.LEVEL", c.LogLevel.String())
 }
 
@@ -118,6 +130,22 @@ func readConfig(path string) (AppConfig, error) {
 	if err != nil {
 		return AppConfig{}, err
 	}
+	reconnectAttempts, err := intValue(cfg, "RECOVERY", "RECONNECT_ATTEMPTS", 3)
+	if err != nil {
+		return AppConfig{}, err
+	}
+	initialBackoff, err := durationSeconds(cfg, "RECOVERY", "INITIAL_BACKOFF_SEC", 1)
+	if err != nil {
+		return AppConfig{}, err
+	}
+	maxBackoff, err := durationSeconds(cfg, "RECOVERY", "MAX_BACKOFF_SEC", 10)
+	if err != nil {
+		return AppConfig{}, err
+	}
+	resetCooldown, err := durationSeconds(cfg, "RECOVERY", "RESET_COOLDOWN_SEC", 300)
+	if err != nil {
+		return AppConfig{}, err
+	}
 
 	haDeviceID := value(cfg, "MQTT", "HA_DEVICE_ID", "growatt_spf5000es")
 	app := AppConfig{
@@ -143,6 +171,12 @@ func readConfig(path string) (AppConfig, error) {
 			ConfigInterval: configInterval,
 			StatusInterval: statusInterval,
 		},
+		Recovery: RecoveryConfig{
+			ReconnectAttempts: reconnectAttempts,
+			InitialBackoff:    initialBackoff,
+			MaxBackoff:        maxBackoff,
+			ResetCooldown:     resetCooldown,
+		},
 	}
 
 	if app.Modbus.Timeout < 100*time.Millisecond {
@@ -162,6 +196,12 @@ func readConfig(path string) (AppConfig, error) {
 	}
 	if app.Polling.StatusInterval < time.Second {
 		return AppConfig{}, fmt.Errorf("POLLING.STATUS_INTERVAL_SEC must be at least 1")
+	}
+	if app.Recovery.ReconnectAttempts < 1 || app.Recovery.ReconnectAttempts > 20 {
+		return AppConfig{}, fmt.Errorf("RECOVERY.RECONNECT_ATTEMPTS must be between 1 and 20")
+	}
+	if app.Recovery.MaxBackoff < app.Recovery.InitialBackoff {
+		return AppConfig{}, fmt.Errorf("RECOVERY.MAX_BACKOFF_SEC must be at least RECOVERY.INITIAL_BACKOFF_SEC")
 	}
 	if app.MQTT.Port < 1 || app.MQTT.Port > 65535 {
 		return AppConfig{}, fmt.Errorf("MQTT.PORT must be between 1 and 65535")
@@ -243,10 +283,11 @@ func durationSeconds(cfg *ini.File, section, key string, fallback float64) (time
 }
 
 var configSchema = map[string]map[string]struct{}{
-	"MODBUS":  keys("PORT", "TIMEOUT_SEC"),
-	"MQTT":    keys("HOST", "PORT", "USER", "PASSWORD", "CLIENT_ID", "KEEPALIVE_SEC", "WILL_DELAY_SEC", "DISCONNECT_TIMEOUT_SEC", "TOPIC_PREFIX", "HA_DISCOVERY_PREFIX", "HA_DEVICE_ID", "HA_DEVICE_NAME"),
-	"POLLING": keys("CONFIG_INTERVAL_SEC", "STATUS_INTERVAL_SEC"),
-	"LOGGING": keys("LEVEL"),
+	"MODBUS":   keys("PORT", "TIMEOUT_SEC"),
+	"MQTT":     keys("HOST", "PORT", "USER", "PASSWORD", "CLIENT_ID", "KEEPALIVE_SEC", "WILL_DELAY_SEC", "DISCONNECT_TIMEOUT_SEC", "TOPIC_PREFIX", "HA_DISCOVERY_PREFIX", "HA_DEVICE_ID", "HA_DEVICE_NAME"),
+	"POLLING":  keys("CONFIG_INTERVAL_SEC", "STATUS_INTERVAL_SEC"),
+	"RECOVERY": keys("RECONNECT_ATTEMPTS", "INITIAL_BACKOFF_SEC", "MAX_BACKOFF_SEC", "RESET_COOLDOWN_SEC"),
+	"LOGGING":  keys("LEVEL"),
 }
 
 func keys(names ...string) map[string]struct{} {

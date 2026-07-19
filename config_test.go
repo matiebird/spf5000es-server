@@ -36,6 +36,10 @@ LEVEL = warning
 	if got.MQTT.WillDelay != 5*time.Minute {
 		t.Fatalf("MQTT will delay = %v, want 5m", got.MQTT.WillDelay)
 	}
+	if got.Recovery.ReconnectAttempts != 3 || got.Recovery.InitialBackoff != time.Second ||
+		got.Recovery.MaxBackoff != 10*time.Second || got.Recovery.ResetCooldown != 5*time.Minute {
+		t.Fatalf("recovery defaults = %#v", got.Recovery)
+	}
 	if got.MQTT.Username != "" || got.MQTT.Password != "" {
 		t.Fatalf("optional credentials were not cleared: user=%q password=%q", got.MQTT.Username, got.MQTT.Password)
 	}
@@ -77,6 +81,9 @@ func TestReadConfigRejectsInvalidValues(t *testing.T) {
 		{"non-finite duration", "[POLLING]\nSTATUS_INTERVAL_SEC=NaN"},
 		{"non-positive duration", "[POLLING]\nSTATUS_INTERVAL_SEC=0"},
 		{"short Modbus timeout", "[MODBUS]\nTIMEOUT_SEC=0.01"},
+		{"no reconnect attempts", "[RECOVERY]\nRECONNECT_ATTEMPTS=0"},
+		{"too many reconnect attempts", "[RECOVERY]\nRECONNECT_ATTEMPTS=21"},
+		{"backoff maximum below initial", "[RECOVERY]\nINITIAL_BACKOFF_SEC=5\nMAX_BACKOFF_SEC=1"},
 		{"short keepalive", "[MQTT]\nKEEPALIVE_SEC=0.5"},
 		{"short config interval", "[POLLING]\nCONFIG_INTERVAL_SEC=0.5"},
 		{"empty host", "[MQTT]\nHOST="},

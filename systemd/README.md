@@ -4,7 +4,7 @@ The installer builds the server and runs it as a systemd service.
 
 ## Install
 
-Install Go and `usbreset`, then run from the repository root:
+Install Go, polkit, and `usbreset`, then run:
 
 ```sh
 sudo ./systemd/install-systemd.sh
@@ -17,8 +17,8 @@ sudoedit /etc/spf5000es-server/config.ini
 sudo systemctl restart spf5000es-server.service
 ```
 
-Running the installer again updates the server without replacing your
-configuration.
+Reinstalling preserves the configuration and `/usr/local/bin/spf5000es-recovery`.
+Replace the latter to customize hardware recovery.
 
 ## Useful commands
 
@@ -41,5 +41,5 @@ To build locally and install over SSH:
 ./systemd/install-systemd.sh pi@raspberrypi.local
 ```
 
-The remote user must have `sudo` access. The remote machine also needs systemd,
-`usbreset`, and the `dialout` group.
+The remote user needs `sudo`; the host needs systemd, polkit, `usbreset`, and
+the `dialout` group.

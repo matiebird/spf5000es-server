@@ -2,7 +2,6 @@
 Description=Growatt SPF 5000 ES MQTT service
 Wants=network-online.target
 After=network-online.target
-OnFailure=spf5000es-recovery.service
 StartLimitIntervalSec=0
 
 [Service]
@@ -12,7 +11,8 @@ Group=spf5000es
 SupplementaryGroups=dialout
 WorkingDirectory=/etc/spf5000es-server
 ExecStart=/usr/local/bin/spf5000es-server
-Restart=no
+Restart=on-failure
+RestartSec=5s
 KillSignal=SIGTERM
 TimeoutStopSec=10s
 UMask=0077

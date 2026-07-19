@@ -3,8 +3,6 @@ PORT = /dev/ttyUSB0
 TIMEOUT_SEC = 1.5
 
 [LOGGING]
-; INFO logs startup/shutdown, register write values, and rejections.
-; DEBUG also logs status polling and register windows.
 LEVEL = INFO
 
 [MQTT]
@@ -24,3 +22,9 @@ HA_DEVICE_NAME = Growatt SPF 5000 ES
 [POLLING]
 CONFIG_INTERVAL_SEC = 600
 STATUS_INTERVAL_SEC = 2
+
+[RECOVERY]
+RECONNECT_ATTEMPTS = 3
+INITIAL_BACKOFF_SEC = 1
+MAX_BACKOFF_SEC = 10
+RESET_COOLDOWN_SEC = 300
