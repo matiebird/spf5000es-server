@@ -38,11 +38,12 @@ type mqttPublication struct {
 }
 
 type recordingMQTTClient struct {
-	open          bool
-	publications  []mqttPublication
-	subscriptions []paho.SubscribeOptions
-	subscribeErrs []error
-	disconnects   int
+	open            bool
+	publications    []mqttPublication
+	subscriptions   []paho.SubscribeOptions
+	subscribeErrs   []error
+	disconnects     int
+	publishDeadline bool
 }
 
 func (c *recordingMQTTClient) Disconnect(context.Context) error {
@@ -59,11 +60,26 @@ func (c *recordingMQTTClient) Subscribe(_ context.Context, subscribe *paho.Subsc
 	c.subscribeErrs = c.subscribeErrs[1:]
 	return &paho.Suback{}, err
 }
-func (c *recordingMQTTClient) Publish(_ context.Context, publish *paho.Publish) (*paho.PublishResponse, error) {
+func (c *recordingMQTTClient) Publish(ctx context.Context, publish *paho.Publish) (*paho.PublishResponse, error) {
+	_, c.publishDeadline = ctx.Deadline()
 	c.publications = append(c.publications, mqttPublication{
 		topic: publish.Topic, payload: append([]byte(nil), publish.Payload...), retain: publish.Retain,
 	})
 	return &paho.PublishResponse{}, nil
+}
+
+func TestMQTTPublishesWithDeadline(t *testing.T) {
+	client := &recordingMQTTClient{}
+	service := NewMQTTService(nil, MQTTConfig{
+		TopicPrefix: "inverter", HADiscoveryPrefix: "homeassistant", HADeviceID: "test_inverter",
+		OperationTimeout: time.Second,
+	})
+	service.client = client
+	service.publish("inverter/status", []byte("ready"), true)
+
+	if !client.publishDeadline {
+		t.Fatal("MQTT publish context has no deadline")
+	}
 }
 
 type errUnexpectedPayloadType struct{ payload any }

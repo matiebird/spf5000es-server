@@ -643,7 +643,9 @@ func (s *MQTTService) publish(topic string, payload []byte, retain bool) {
 	if client == nil {
 		return
 	}
-	if _, err := client.Publish(context.Background(), &paho.Publish{Topic: topic, Payload: payload, QoS: 0, Retain: retain}); err != nil {
+	ctx, cancel := context.WithTimeout(context.Background(), s.config.OperationTimeout)
+	defer cancel()
+	if _, err := client.Publish(ctx, &paho.Publish{Topic: topic, Payload: payload, QoS: 0, Retain: retain}); err != nil {
 		slog.Error("MQTT publish failed", "topic", topic, "error", err)
 	}
 }
