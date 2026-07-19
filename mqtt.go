@@ -220,10 +220,14 @@ func (s *MQTTService) availabilityTopic() string {
 }
 
 func (s *MQTTService) onConnect(client mqttClient, connectionID uint64) {
-	slog.Info("MQTT connected")
 	s.mu.Lock()
+	if connectionID != s.connectionID {
+		s.mu.Unlock()
+		return
+	}
 	s.client = client
 	s.mu.Unlock()
+	slog.Info("MQTT connected")
 
 	if err := s.subscribeCommands(client, connectionID); err != nil {
 		slog.Warn("MQTT connection setup stopped", "error", err)

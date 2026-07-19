@@ -235,6 +235,26 @@ func TestMQTTSubscribesToCommandsAtQoS1(t *testing.T) {
 	}
 }
 
+func TestMQTTIgnoresStaleConnectionCallback(t *testing.T) {
+	currentClient := &recordingMQTTClient{}
+	staleClient := &recordingMQTTClient{}
+	service := NewMQTTService(noopCommandService{}, MQTTConfig{
+		TopicPrefix: "inverter", HADiscoveryPrefix: "homeassistant", HADeviceID: "test_inverter",
+		OperationTimeout: time.Second, DisconnectTimeout: time.Second,
+	})
+	service.connectionID = 2
+	service.client = currentClient
+
+	service.onConnect(staleClient, 1)
+
+	if service.client != currentClient {
+		t.Fatal("stale connection callback replaced the current MQTT client")
+	}
+	if len(staleClient.subscriptions) != 0 {
+		t.Fatalf("stale client received %d subscriptions, want 0", len(staleClient.subscriptions))
+	}
+}
+
 func TestMQTTRetriesCommandSubscriptions(t *testing.T) {
 	client := &recordingMQTTClient{subscribeErrs: []error{
 		errors.New("temporary subscription failure"),
