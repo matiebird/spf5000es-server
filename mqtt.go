@@ -337,10 +337,16 @@ func (s *MQTTService) StatusUpdated(status map[string]any) {
 	s.statusDirty = true
 	s.updatesPending = true
 	s.mu.Unlock()
+	slog.Debug("mqtt status update queued",
+		"fields", len(status),
+		"status_dirty", true,
+		"updates_pending", true,
+	)
 	s.signalUpdatePublisher()
 }
 
 func (s *MQTTService) publishStatus(status map[string]any) {
+	slog.Debug("mqtt publishing status", "fields", len(status))
 	for key, value := range status {
 		topic := s.statusTopics[key]
 		if topic == "" {
@@ -356,6 +362,11 @@ func (s *MQTTService) ConfigUpdated(config map[string]any) {
 	s.configDirty = true
 	s.updatesPending = true
 	s.mu.Unlock()
+	slog.Debug("mqtt config update queued",
+		"fields", len(config),
+		"config_dirty", true,
+		"updates_pending", true,
+	)
 	s.signalUpdatePublisher()
 }
 
@@ -375,6 +386,7 @@ func (s *MQTTService) InverterAvailabilityChanged(available bool) {
 }
 
 func (s *MQTTService) publishConfig(config map[string]any) {
+	slog.Debug("mqtt publishing config", "fields", len(config))
 	for key, value := range config {
 		topic := s.configTopics[key]
 		if topic == "" {
@@ -404,10 +416,18 @@ func (s *MQTTService) signalUpdatePublisher() {
 func (s *MQTTService) publishUpdates() {
 	s.mu.Lock()
 	if !s.connected {
-		if s.statusDirty || s.configDirty {
+		statusDirty := s.statusDirty
+		configDirty := s.configDirty
+		if statusDirty || configDirty {
 			s.updatesPending = true
 		}
 		s.mu.Unlock()
+		slog.Debug("mqtt publish updates deferred",
+			"connected", false,
+			"status_dirty", statusDirty,
+			"config_dirty", configDirty,
+			"updates_pending_rearmed", statusDirty || configDirty,
+		)
 		return
 	}
 	statusDirty, configDirty := s.statusDirty, s.configDirty
@@ -416,6 +436,13 @@ func (s *MQTTService) publishUpdates() {
 	s.pendingStatus, s.pendingConfig = nil, nil
 	s.statusDirty, s.configDirty = false, false
 	s.mu.Unlock()
+	slog.Debug("mqtt publish updates starting",
+		"connected", true,
+		"status_dirty", statusDirty,
+		"config_dirty", configDirty,
+		"status_fields", len(status),
+		"config_fields", len(config),
+	)
 	if statusDirty {
 		s.publishStatus(status)
 	}
@@ -441,7 +468,15 @@ func (s *MQTTService) publishReadyAfterInitialState(connectionID uint64, configP
 	s.discoveryPending = false
 	publishOnline := !s.onlinePublished
 	s.onlinePublished = true
+	initialConfigPublished := s.initialConfigPublished
+	initialStatusPublished := s.initialStatusPublished
 	s.mu.Unlock()
+	slog.Debug("mqtt discovery decision",
+		"publish_discovery", publishDiscovery,
+		"publish_online", publishOnline,
+		"initial_config_published", initialConfigPublished,
+		"initial_status_published", initialStatusPublished,
+	)
 	if publishDiscovery {
 		s.publishDeviceDiscovery()
 	}
@@ -454,11 +489,22 @@ func (s *MQTTService) runPending() bool {
 	s.mu.Lock()
 	updates := s.updatesPending
 	pendingDirty := s.statusDirty || s.configDirty
+	statusDirty := s.statusDirty
+	configDirty := s.configDirty
+	connected := s.connected
 	shouldPublish := updates || pendingDirty
 	if shouldPublish {
 		s.updatesPending = false
 	}
 	s.mu.Unlock()
+
+	slog.Debug("mqtt run pending publish decision",
+		"connected", connected,
+		"updates_pending", updates,
+		"status_dirty", statusDirty,
+		"config_dirty", configDirty,
+		"should_publish", shouldPublish,
+	)
 
 	if shouldPublish {
 		s.publishUpdates()
@@ -635,6 +681,7 @@ func (s *MQTTService) componentBase(objectID, name string) map[string]any {
 
 func (s *MQTTService) publishDiscoveryPayload(component, objectID string, payload map[string]any) {
 	topic := fmt.Sprintf("%s/%s/%s/config", s.config.HADiscoveryPrefix, component, objectID)
+	slog.Debug("mqtt publishing discovery", "topic", topic, "component", component, "object_id", objectID)
 	if payload == nil {
 		s.publish(topic, nil, true)
 		return
@@ -652,13 +699,16 @@ func (s *MQTTService) publish(topic string, payload []byte, retain bool) {
 	client := s.client
 	s.mu.Unlock()
 	if client == nil {
+		slog.Debug("mqtt publish skipped", "topic", topic, "reason", "no client")
 		return
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), s.config.OperationTimeout)
 	defer cancel()
 	if _, err := client.Publish(ctx, &paho.Publish{Topic: topic, Payload: payload, QoS: 0, Retain: retain}); err != nil {
 		slog.Error("MQTT publish failed", "topic", topic, "error", err)
+		return
 	}
+	slog.Debug("mqtt published", "topic", topic, "retain", retain)
 }
 
 func merge(destination, source map[string]any) {

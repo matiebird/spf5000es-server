@@ -307,6 +307,7 @@ func (s *PollingService) pollStatus(ctx context.Context) error {
 	}
 	if s.sink != nil {
 		s.sink.StatusUpdated(status)
+		slog.Debug("polling delivered status to sink", "fields", len(status))
 	}
 	return nil
 }
@@ -318,6 +319,7 @@ func (s *PollingService) pollConfig(ctx context.Context) error {
 	}
 	if s.sink != nil {
 		s.sink.ConfigUpdated(config)
+		slog.Debug("polling delivered config to sink", "fields", len(config))
 	}
 	return nil
 }
