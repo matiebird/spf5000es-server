@@ -5,6 +5,7 @@ import (
 	"crypto/tls"
 	"encoding/json"
 	"errors"
+	"sync"
 	"testing"
 	"time"
 
@@ -38,6 +39,7 @@ type mqttPublication struct {
 }
 
 type recordingMQTTClient struct {
+	mu              sync.Mutex
 	open            bool
 	publications    []mqttPublication
 	subscriptions   []paho.SubscribeOptions
@@ -46,12 +48,44 @@ type recordingMQTTClient struct {
 	publishDeadline bool
 }
 
+func (c *recordingMQTTClient) publicationsSnapshot() []mqttPublication {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	snapshot := make([]mqttPublication, len(c.publications))
+	copy(snapshot, c.publications)
+	return snapshot
+}
+
+func (c *recordingMQTTClient) clearPublications() {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.publications = nil
+}
+
+func (c *recordingMQTTClient) subscriptionsSnapshot() []paho.SubscribeOptions {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	snapshot := make([]paho.SubscribeOptions, len(c.subscriptions))
+	copy(snapshot, c.subscriptions)
+	return snapshot
+}
+
+func (c *recordingMQTTClient) disconnectCount() int {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.disconnects
+}
+
 func (c *recordingMQTTClient) Disconnect(context.Context) error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
 	c.open = false
 	c.disconnects++
 	return nil
 }
 func (c *recordingMQTTClient) Subscribe(_ context.Context, subscribe *paho.Subscribe) (*paho.Suback, error) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
 	c.subscriptions = append(c.subscriptions, subscribe.Subscriptions...)
 	if len(c.subscribeErrs) == 0 {
 		return &paho.Suback{}, nil
@@ -62,6 +96,8 @@ func (c *recordingMQTTClient) Subscribe(_ context.Context, subscribe *paho.Subsc
 }
 func (c *recordingMQTTClient) Publish(ctx context.Context, publish *paho.Publish) (*paho.PublishResponse, error) {
 	_, c.publishDeadline = ctx.Deadline()
+	c.mu.Lock()
+	defer c.mu.Unlock()
 	c.publications = append(c.publications, mqttPublication{
 		topic: publish.Topic, payload: append([]byte(nil), publish.Payload...), retain: publish.Retain,
 	})
@@ -79,6 +115,9 @@ func TestMQTTPublishesWithDeadline(t *testing.T) {
 
 	if !client.publishDeadline {
 		t.Fatal("MQTT publish context has no deadline")
+	}
+	if pubs := client.publicationsSnapshot(); len(pubs) != 1 {
+		t.Fatalf("published %d messages, want 1", len(pubs))
 	}
 }
 
@@ -150,8 +189,8 @@ func TestMQTTKeepsLatestUpdateWhileDisconnected(t *testing.T) {
 	if !service.runPending() {
 		t.Fatal("status update was not marked pending")
 	}
-	if len(client.publications) != 0 {
-		t.Fatalf("published %d messages while disconnected", len(client.publications))
+	if len(client.publicationsSnapshot()) != 0 {
+		t.Fatalf("published %d messages while disconnected", len(client.publicationsSnapshot()))
 	}
 	service.mu.Lock()
 	retained := service.statusDirty && service.pendingStatus != nil
@@ -165,13 +204,13 @@ func TestMQTTKeepsLatestUpdateWhileDisconnected(t *testing.T) {
 	if !service.runPending() {
 		t.Fatal("reconnect did not schedule the retained update")
 	}
-	if len(client.publications) != 1 {
-		t.Fatalf("published %d messages after reconnect, want 1", len(client.publications))
+	if len(client.publicationsSnapshot()) != 1 {
+		t.Fatalf("published %d messages after reconnect, want 1", len(client.publicationsSnapshot()))
 	}
-	if got := string(client.publications[0].payload); got != "123.4" {
+	if got := string(client.publicationsSnapshot()[0].payload); got != "123.4" {
 		t.Fatalf("status payload = %q, want 123.4", got)
 	}
-	if !client.publications[0].retain {
+	if !client.publicationsSnapshot()[0].retain {
 		t.Fatal("status payload was not retained")
 	}
 }
@@ -184,13 +223,14 @@ func TestMQTTDiscoveryDoesNotRetainCommands(t *testing.T) {
 	service.client = client
 	service.publishDeviceDiscovery()
 
-	if len(client.publications) != 1 {
-		t.Fatalf("published %d discovery messages, want 1", len(client.publications))
+	pubs := client.publicationsSnapshot()
+	if len(pubs) != 1 {
+		t.Fatalf("published %d discovery messages, want 1", len(pubs))
 	}
 	var discovery struct {
 		Components map[string]map[string]any `json:"components"`
 	}
-	if err := json.Unmarshal(client.publications[0].payload, &discovery); err != nil {
+	if err := json.Unmarshal(pubs[0].payload, &discovery); err != nil {
 		t.Fatal(err)
 	}
 	for objectID, component := range discovery.Components {
@@ -225,10 +265,11 @@ func TestMQTTSubscribesToCommandsAtQoS1(t *testing.T) {
 	})
 	service.onConnect(client, 0)
 
-	if len(client.subscriptions) != 2 {
-		t.Fatalf("subscriptions = %d, want 2", len(client.subscriptions))
+	subscriptions := client.subscriptionsSnapshot()
+	if len(subscriptions) != 2 {
+		t.Fatalf("subscriptions = %d, want 2", len(subscriptions))
 	}
-	for _, subscription := range client.subscriptions {
+	for _, subscription := range subscriptions {
 		if subscription.QoS != 1 {
 			t.Errorf("subscription %q QoS = %d, want 1", subscription.Topic, subscription.QoS)
 		}
@@ -250,8 +291,8 @@ func TestMQTTIgnoresStaleConnectionCallback(t *testing.T) {
 	if service.client != currentClient {
 		t.Fatal("stale connection callback replaced the current MQTT client")
 	}
-	if len(staleClient.subscriptions) != 0 {
-		t.Fatalf("stale client received %d subscriptions, want 0", len(staleClient.subscriptions))
+	if len(staleClient.subscriptionsSnapshot()) != 0 {
+		t.Fatalf("stale client received %d subscriptions, want 0", len(staleClient.subscriptionsSnapshot()))
 	}
 }
 
@@ -267,11 +308,11 @@ func TestMQTTRetriesCommandSubscriptions(t *testing.T) {
 	service.sleep = func(context.Context, time.Duration) error { return nil }
 	service.onConnect(client, 0)
 
-	if got := len(client.subscriptions); got != 6 {
+	if got := len(client.subscriptionsSnapshot()); got != 6 {
 		t.Fatalf("subscription entries = %d, want 6", got)
 	}
-	if client.disconnects != 0 {
-		t.Fatalf("disconnects = %d, want 0", client.disconnects)
+	if client.disconnectCount() != 0 {
+		t.Fatalf("disconnects = %d, want 0", client.disconnectCount())
 	}
 }
 

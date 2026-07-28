@@ -404,6 +404,9 @@ func (s *MQTTService) signalUpdatePublisher() {
 func (s *MQTTService) publishUpdates() {
 	s.mu.Lock()
 	if !s.connected {
+		if s.statusDirty || s.configDirty {
+			s.updatesPending = true
+		}
 		s.mu.Unlock()
 		return
 	}
@@ -450,13 +453,17 @@ func (s *MQTTService) publishReadyAfterInitialState(connectionID uint64, configP
 func (s *MQTTService) runPending() bool {
 	s.mu.Lock()
 	updates := s.updatesPending
-	s.updatesPending = false
+	pendingDirty := s.statusDirty || s.configDirty
+	shouldPublish := updates || pendingDirty
+	if shouldPublish {
+		s.updatesPending = false
+	}
 	s.mu.Unlock()
 
-	if updates {
+	if shouldPublish {
 		s.publishUpdates()
 	}
-	return updates
+	return shouldPublish
 }
 
 func (s *MQTTService) publishDeviceDiscovery() {
