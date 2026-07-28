@@ -257,6 +257,26 @@ func (noopCommandService) QueueConfigWrite(string, any) error { return nil }
 func (noopCommandService) SetPollingEnabled(bool)             {}
 func (noopCommandService) RequestTimeSync() error             { return nil }
 
+func TestMQTTHandleCommandRejectsWritableNumberOutsideNominalCeiling(t *testing.T) {
+	service := NewMQTTService(noopCommandService{}, MQTTConfig{
+		TopicPrefix:       "growatt/spf5000es",
+		HADiscoveryPrefix: "homeassistant",
+		HADeviceID:        "growatt_spf5000es",
+	})
+	service.mu.Lock()
+	service.lastPublishedConfig = copyConfigMap(spf5000ESLiveConfig())
+	service.mu.Unlock()
+
+	err := service.handleCommand("growatt/spf5000es/config/ac_charge_amps/set", "101")
+	if err == nil {
+		t.Fatal("expected AC charge command above live discovery max to be rejected")
+	}
+	err = service.handleCommand("growatt/spf5000es/config/max_charge_amps/set", "361")
+	if err == nil {
+		t.Fatal("expected max charge command above ParaMaxChgAmps to be rejected")
+	}
+}
+
 func TestMQTTSubscribesToCommandsAtQoS1(t *testing.T) {
 	client := &recordingMQTTClient{}
 	service := NewMQTTService(noopCommandService{}, MQTTConfig{

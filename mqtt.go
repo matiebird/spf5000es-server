@@ -51,6 +51,7 @@ type MQTTService struct {
 	discoveryPending       bool
 	onlinePublished        bool
 	batteryType            string
+	lastPublishedConfig    map[string]any
 	pendingStatus          map[string]any
 	pendingConfig          map[string]any
 	statusDirty            bool
@@ -311,6 +312,13 @@ func (s *MQTTService) handleCommand(topic, payload string) error {
 	if err != nil {
 		return err
 	}
+	s.mu.Lock()
+	config := s.lastPublishedConfig
+	batteryType := s.batteryType
+	s.mu.Unlock()
+	if err := validateWritableNumberValue(key, value, config, batteryType); err != nil {
+		return err
+	}
 	return s.commands.QueueConfigWrite(key, value)
 }
 
@@ -397,6 +405,9 @@ func (s *MQTTService) publishConfig(config map[string]any) {
 	if battery, ok := config["BatteryType"].(string); ok {
 		s.updateBatteryType(battery)
 	}
+	s.mu.Lock()
+	s.lastPublishedConfig = copyConfigMap(config)
+	s.mu.Unlock()
 }
 
 func (s *MQTTService) requestUpdatePublish() {
@@ -625,22 +636,11 @@ func isBooleanRegister(key string) bool {
 }
 
 func (s *MQTTService) numberLimits(key string) numberLimits {
-	if key == "BatLowtoUti" || key == "uwAC2BatVolt" {
-		s.mu.Lock()
-		battery := s.batteryType
-		s.mu.Unlock()
-		if battery == "Lithium" {
-			return numberLimits{5, 100, 1}
-		}
-		if battery != "" {
-			return numberLimits{20, 64, 0.1}
-		}
-		return numberLimits{5, 100, 0.1}
-	}
-	if limits, ok := configNumberLimits[key]; ok {
-		return limits
-	}
-	return numberLimits{0, 65535, 1}
+	s.mu.Lock()
+	config := s.lastPublishedConfig
+	batteryType := s.batteryType
+	s.mu.Unlock()
+	return discoveryNumberLimits(key, config, batteryType)
 }
 
 func (s *MQTTService) batteryUnitMetadata() map[string]any {

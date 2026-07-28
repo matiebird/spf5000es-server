@@ -501,7 +501,114 @@ var configNumberLimits = map[string]numberLimits{
 	"ResetToFactory": {0, 1, 1}, "MaxChargeAmps": {0, 180, 1},
 	"BulkChargeVolt": {50, 64, 0.1}, "FloatChargeVolt": {50, 56, 0.1},
 	"ACChargeAmps":   {0, 80, 1},
-	"LiProtocolType": {1, 99, 1},
+	"LiProtocolType": {0, 99, 1},
+}
+
+var discoveryNominalMaxRegisters = map[string]string{
+	"ACChargeAmps":  "NomAcChgCurrRaw",
+	"MaxChargeAmps": "ParaMaxChgAmps",
+}
+
+func copyConfigMap(config map[string]any) map[string]any {
+	if config == nil {
+		return nil
+	}
+	copied := make(map[string]any, len(config))
+	for key, value := range config {
+		copied[key] = value
+	}
+	return copied
+}
+
+func isWritableNumberRegister(key string) bool {
+	definition, ok := holdingByKey[key]
+	if !ok || definition.Write == nil {
+		return false
+	}
+	if booleanKeys[key] || key == "DebugModeEnable" {
+		return false
+	}
+	if _, ok := selectOptions[key]; ok {
+		return false
+	}
+	return definition.Type != registerChar
+}
+
+func scalarAsFloat64(value any) (float64, bool) {
+	switch typed := value.(type) {
+	case int64:
+		return float64(typed), true
+	case int:
+		return float64(typed), true
+	case float64:
+		return typed, true
+	case float32:
+		return float64(typed), true
+	default:
+		return 0, false
+	}
+}
+
+func valueWithinNumberLimits(value any, limits numberLimits) bool {
+	number, ok := scalarAsFloat64(value)
+	if !ok {
+		return false
+	}
+	return number >= limits.Min-1e-9 && number <= limits.Max+1e-9
+}
+
+func baseNumberLimits(key, batteryType string) numberLimits {
+	if key == "BatLowtoUti" || key == "uwAC2BatVolt" {
+		if batteryType == "Lithium" {
+			return numberLimits{5, 100, 1}
+		}
+		if batteryType != "" {
+			return numberLimits{20, 64, 0.1}
+		}
+		return numberLimits{5, 100, 0.1}
+	}
+	if limits, ok := configNumberLimits[key]; ok {
+		return limits
+	}
+	return numberLimits{0, 65535, 1}
+}
+
+func discoveryNumberLimits(key string, config map[string]any, batteryType string) numberLimits {
+	limits := baseNumberLimits(key, batteryType)
+	if nominalKey, ok := discoveryNominalMaxRegisters[key]; ok {
+		state, hasState := scalarAsFloat64(config[key])
+		nominal, hasNominal := scalarAsFloat64(config[nominalKey])
+		if hasState && hasNominal && state <= nominal {
+			if state > limits.Max {
+				limits.Max = state
+			}
+			if state < limits.Min {
+				limits.Min = state
+			}
+		}
+	}
+	if key == "FloatChargeVolt" {
+		bulk := baseNumberLimits("BulkChargeVolt", batteryType)
+		if bulk.Max > limits.Max {
+			limits.Max = bulk.Max
+		}
+	}
+	return limits
+}
+
+func validateWritableNumberValue(key string, value any, config map[string]any, batteryType string) error {
+	if !isWritableNumberRegister(key) {
+		return nil
+	}
+	limits := discoveryNumberLimits(key, config, batteryType)
+	number, ok := scalarAsFloat64(value)
+	if !ok {
+		return fmt.Errorf("numeric value required for %s", key)
+	}
+	if number < limits.Min || number > limits.Max {
+		return fmt.Errorf("%s value %v outside allowed range %v..%v", key, value, limits.Min, limits.Max)
+	}
+	return nil
 }
 
 var entityMetadata = map[string]map[string]any{
